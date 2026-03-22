@@ -1,6 +1,6 @@
 [submodule "rtlbs-client"]
 	path = rtlbs-client
-	url = git@github.com:FoxLisk/rtlbs-client.git
+	url = https://github.com/FoxLisk/rtlbs-client.git
 [submodule "rtlbs-server"]
 	path = rtlbs-server
-	url = git@github.com:FoxLisk/rtlbs-server.git
+	url = https://github.com/FoxLisk/rtlbs-server.git
