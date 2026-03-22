@@ -1,0 +1,103 @@
+x-rtlbs-server-base: &rtlbs_server_base
+  build:
+    context: .
+    dockerfile: Dockerfile.rtlbs-server.dev
+  working_dir: /app/server
+  volumes:
+    - ./rtlbs-server:/app/server
+  depends_on:
+    redis:
+      condition: service_started
+
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+  fixtures:
+    <<: *rtlbs_server_base
+    command:
+      - sh
+      - -c
+      - |
+        cat > core/settings_local.py <<'EOF'
+        CACHES = {
+            'default': {
+                'BACKEND': 'django_redis.cache.RedisCache',
+                'LOCATION': 'redis://redis:6379/1',
+                'OPTIONS': {
+                    'CLIENT_CLASS': 'django_redis.client.DefaultClient',
+                }
+            }
+        }
+
+        API_URL = 'http://localhost:18100/'
+        EOF
+        python manage.py migrate
+        python manage.py dump_client_fixtures > /app/client/src/fixtures.js
+    volumes:
+      - ./rtlbs-server:/app/server
+      - ./rtlbs-client:/app/client
+
+  server:
+    <<: *rtlbs_server_base
+    command:
+      - sh
+      - -c
+      - |
+        cat > core/settings_local.py <<'EOF'
+        CACHES = {
+            'default': {
+                'BACKEND': 'django_redis.cache.RedisCache',
+                'LOCATION': 'redis://redis:6379/1',
+                'OPTIONS': {
+                    'CLIENT_CLASS': 'django_redis.client.DefaultClient',
+                }
+            }
+        }
+        API_URL = 'http://localhost:18100/'
+        EOF
+        python manage.py migrate
+        python manage.py runserver 0.0.0.0:8000
+    ports:
+      - "18100:8000"
+
+  client:
+    build:
+      context: .
+      dockerfile: Dockerfile.rtlbs-client.dev
+    working_dir: /app
+    command:
+      - sh
+      - -c
+      - |
+        cat > vue.config.js <<'EOF'
+        const path = require('path')
+
+        module.exports = {
+          chainWebpack: config => {
+            config.module
+              .rule('eslint')
+              .exclude
+              .add(path.resolve(__dirname, 'src/fixtures.js'))
+          }
+        }
+        EOF
+        cat > src/config.js <<'EOF'
+        export default {
+          API_URL: 'http://localhost:18100/'
+        }
+        EOF
+        until [ -f src/fixtures.js ]; do sleep 1; done
+        npm run serve -- --host 0.0.0.0 --port 8080
+    volumes:
+      - ./rtlbs-client:/app
+      - /app/node_modules
+    ports:
+      - "8080:8080"
+    depends_on:
+      fixtures:
+        condition: service_completed_successfully
+      server:
+        condition: service_started

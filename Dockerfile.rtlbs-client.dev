@@ -1,0 +1,6 @@
+FROM node:16-bullseye
+
+WORKDIR /app
+
+COPY rtlbs-client/package*.json ./
+RUN npm install
