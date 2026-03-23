@@ -5,36 +5,25 @@ x-rtlbs-server-base: &rtlbs_server_base
   working_dir: /app/server
   volumes:
     - ./rtlbs-server:/app/server
-  depends_on:
-    redis:
-      condition: service_started
 
 services:
-  redis:
-    image: redis:7-alpine
-    ports:
-      - "6379:6379"
 
   fixtures:
     <<: *rtlbs_server_base
+    init: true
     command:
       - sh
       - -c
       - |
+        set -e
         cat > core/settings_local.py <<'EOF'
-        CACHES = {
-            'default': {
-                'BACKEND': 'django_redis.cache.RedisCache',
-                'LOCATION': 'redis://redis:6379/1',
-                'OPTIONS': {
-                    'CLIENT_CLASS': 'django_redis.client.DefaultClient',
-                }
-            }
-        }
-
         API_URL = 'http://localhost:18100/'
         EOF
+        echo '[fixtures] Running migrations'
         python manage.py migrate
+        #echo '[fixtures] Fetching runs from speedrun.com'
+        #python manage.py fetch_runs --debug
+        echo '[fixtures] Generating client fixtures'
         python manage.py dump_client_fixtures > /app/client/src/fixtures.js
     volumes:
       - ./rtlbs-server:/app/server
@@ -42,31 +31,27 @@ services:
 
   server:
     <<: *rtlbs_server_base
+    init: true
     command:
       - sh
       - -c
       - |
+        set -e
         cat > core/settings_local.py <<'EOF'
-        CACHES = {
-            'default': {
-                'BACKEND': 'django_redis.cache.RedisCache',
-                'LOCATION': 'redis://redis:6379/1',
-                'OPTIONS': {
-                    'CLIENT_CLASS': 'django_redis.client.DefaultClient',
-                }
-            }
-        }
         API_URL = 'http://localhost:18100/'
         EOF
-        python manage.py migrate
-        python manage.py runserver 0.0.0.0:8000
+        exec python manage.py runserver 0.0.0.0:8000
     ports:
       - "18100:8000"
+    depends_on:
+      fixtures:
+        condition: service_completed_successfully
 
   client:
     build:
       context: .
       dockerfile: Dockerfile.rtlbs-client.dev
+    init: true
     working_dir: /app
     command:
       - sh
@@ -90,7 +75,7 @@ services:
         }
         EOF
         until [ -f src/fixtures.js ]; do sleep 1; done
-        npm run serve -- --host 0.0.0.0 --port 8080
+        exec npm run serve -- --host 0.0.0.0 --port 8080
     volumes:
       - ./rtlbs-client:/app
       - /app/node_modules
